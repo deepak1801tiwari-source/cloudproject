@@ -1,0 +1,265 @@
+# .github/workflows/deploy-all-services.yaml
+name: Deploy All Services
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: dev-eks-cluster
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      user-service: ${{ steps.filter.outputs.user-service }}
+      product-service: ${{ steps.filter.outputs.product-service }}
+      cart-service: ${{ steps.filter.outputs.cart-service }}
+      order-service: ${{ steps.filter.outputs.order-service }}
+      terraform: ${{ steps.filter.outputs.terraform }}
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            user-service:
+              - 'services/user-service/**'
+            product-service:
+              - 'services/product-service/**'
+            cart-service:
+              - 'services/cart-service/**'
+            order-service:
+              - 'services/order-service/**'
+            terraform:
+              - 'terraform/**'
+
+  terraform:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.terraform == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.6.0
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+      
+      - name: Terraform Validate
+        working-directory: ./terraform
+        run: terraform validate
+      
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: terraform plan -out=tfplan
+        env:
+          TF_VAR_db_username: ${{ secrets.DB_USERNAME }}
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+      
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: ./terraform
+        run: terraform apply -auto-approve tfplan
+
+  build-and-deploy-user-service:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.user-service == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      
+      - name: Build, tag, and push image to Amazon ECR
+        working-directory: ./services/user-service
+        env:
+          ECR_REPOSITORY: dev/user-service
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+      
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_REGION
+      
+      - name: Deploy to EKS
+        working-directory: ./k8s/user-service
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|ACCOUNT_ID|${{ secrets.AWS_ACCOUNT_ID }}|g" deployment.yaml
+          sed -i "s|:latest|:$IMAGE_TAG|g" deployment.yaml
+          kubectl apply -f serviceaccount.yaml
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+          kubectl apply -f hpa.yaml
+          kubectl rollout status deployment/user-service -n cloudops
+
+  build-and-deploy-product-service:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.product-service == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+      
+      - name: Build, tag, and push image
+        working-directory: ./services/product-service
+        env:
+          ECR_REPOSITORY: dev/product-service
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+      
+      - name: Deploy to EKS
+        working-directory: ./k8s/product-service
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_REGION
+          sed -i "s|ACCOUNT_ID|${{ secrets.AWS_ACCOUNT_ID }}|g" deployment.yaml
+          sed -i "s|:latest|:$IMAGE_TAG|g" deployment.yaml
+          kubectl apply -f serviceaccount.yaml
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+          kubectl apply -f hpa.yaml
+          kubectl rollout status deployment/product-service -n cloudops
+
+  build-and-deploy-cart-service:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.cart-service == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+      
+      - name: Build, tag, and push image
+        working-directory: ./services/cart-service
+        env:
+          ECR_REPOSITORY: dev/cart-service
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+      
+      - name: Deploy to EKS
+        working-directory: ./k8s/cart-service
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_REGION
+          sed -i "s|ACCOUNT_ID|${{ secrets.AWS_ACCOUNT_ID }}|g" deployment.yaml
+          sed -i "s|:latest|:$IMAGE_TAG|g" deployment.yaml
+          kubectl apply -f serviceaccount.yaml
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+          kubectl apply -f hpa.yaml
+          kubectl rollout status deployment/cart-service -n cloudops
+
+  build-and-deploy-order-service:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.order-service == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+      
+      - name: Build, tag, and push image
+        working-directory: ./services/order-service
+        env:
+          ECR_REPOSITORY: dev/order-service
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+      
+      - name: Deploy to EKS
+        working-directory: ./k8s/order-service
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_REGION
+          sed -i "s|ACCOUNT_ID|${{ secrets.AWS_ACCOUNT_ID }}|g" deployment.yaml
+          sed -i "s|:latest|:$IMAGE_TAG|g" deployment.yaml
+          kubectl apply -f serviceaccount.yaml
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+          kubectl apply -f hpa.yaml
+          kubectl rollout status deployment/order-service -n cloudops
+
+  notify:
+    needs: [build-and-deploy-user-service, build-and-deploy-product-service, build-and-deploy-cart-service, build-and-deploy-order-service]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send notification
+        run: |
+          echo "Deployment complete! Services updated successfully."
