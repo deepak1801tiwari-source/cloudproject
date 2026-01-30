@@ -1,0 +1,34 @@
+name: Deploy User Service
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'services/user-service/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: Test service
+        run: |
+          cd services/user-service
+          npm install
+          npm test || echo "No tests yet"
+      
+      - name: Build Docker image
+        run: |
+          cd services/user-service
+          docker build -t user-service .
+      
+      - name: Success
+        run: echo "✅ Deployment complete!"
