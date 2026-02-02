@@ -1,0 +1,79 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          ["AWS/EKS", "cluster_node_count", { "stat": "Average" }],
+          [".", "cluster_failed_node_count", { "stat": "Sum" }]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "EKS Cluster Nodes",
+        "period": 300
+      }
+    },
+    {
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          ["AWS/RDS", "CPUUtilization", { "stat": "Average" }],
+          [".", "DatabaseConnections", { "stat": "Sum" }],
+          [".", "FreeStorageSpace", { "stat": "Average", "yAxis": "right" }]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "RDS Metrics",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          ["AWS/ElastiCache", "CPUUtilization", { "stat": "Average" }],
+          [".", "NetworkBytesIn", { "stat": "Sum" }],
+          [".", "NetworkBytesOut", { "stat": "Sum" }],
+          [".", "CurrConnections", { "stat": "Average" }]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "Redis Metrics",
+        "period": 300
+      }
+    },
+    {
+      "type": "metric",
+      "properties": {
+        "metrics": [
+          ["AWS/SQS", "NumberOfMessagesSent", { "stat": "Sum" }],
+          [".", "NumberOfMessagesReceived", { "stat": "Sum" }],
+          [".", "ApproximateNumberOfMessagesVisible", { "stat": "Average" }]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "SQS Queue Metrics",
+        "period": 300
+      }
+    },
+    {
+      "type": "log",
+      "properties": {
+        "query": "SOURCE '/aws/eks/dev-eks-cluster/cluster'\n| fields @timestamp, @message\n| filter @message like /error/i\n| sort @timestamp desc\n| limit 20",
+        "region": "us-east-1",
+        "stacked": false,
+        "title": "EKS Error Logs",
+        "view": "table"
+      }
+    }
+  ]
+}

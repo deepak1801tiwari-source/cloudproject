@@ -1,0 +1,18 @@
+# k8s/cart-service/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: cart-service
+  namespace: cloudops
+  labels:
+    app: cart-service
+spec:
+  type: ClusterIP
+  selector:
+    app: cart-service
+  ports:
+  - name: http
+    port: 80
+    targetPort: 3003
+    protocol: TCP
+

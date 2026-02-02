@@ -1,0 +1,17 @@
+# k8s/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: cloudops
+data:
+  # Environment
+  ENVIRONMENT: "dev"
+  AWS_REGION: "us-east-1"
+  
+  # Logging
+  LOG_LEVEL: "info"
+  
+  # Feature flags
+  ENABLE_METRICS: "true"
+  ENABLE_TRACING: "true"

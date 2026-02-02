@@ -1,0 +1,17 @@
+{
+  "name": "cart-service",
+  "version": "1.0.0",
+  "description": "Cart microservice for cloudproject",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "keywords": ["cart", "microservice", "nodejs"],
+  "author": "deepak",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.19.2",
+    "redis": "^5.10.0"
+  }
+}

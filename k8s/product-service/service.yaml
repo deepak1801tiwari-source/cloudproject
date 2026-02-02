@@ -1,0 +1,17 @@
+# k8s/product-service/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-service
+  namespace: cloudops
+  labels:
+    app: product-service
+spec:
+  type: ClusterIP
+  selector:
+    app: product-service
+  ports:
+  - name: http
+    port: 80
+    targetPort: 3002
+    protocol: TCP
