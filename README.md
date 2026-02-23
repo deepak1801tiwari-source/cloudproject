@@ -228,7 +228,7 @@ MIT License
 
 ## 👥 Authors
 
-Your Name - [your-email@example.com](deepak1801tiwari@gmail.com)
+Your Name - [deepak1801tiwari@gmail.com](deepak1801tiwari@gmail.com)
 
 ## 🙏 Acknowledgments
 
